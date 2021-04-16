@@ -13,8 +13,8 @@ class EismoinfoLTWeather(RMParser):
     parserInterval = 1 * 3600  # Your parser running interval in seconds, data will only be mixed in hourly intervals
     parserDebug = False
 
-    nearestStationID = None  # we will find nearest station automatically on first run
-    defaultParams = {}  # set empty defaults params to clear info from previous versions
+    params = {"nearestStationID": ""}  # we will find nearest station automatically if it is not set
+    defaultParams = {"nearestStationID": ""}
 
     def findNearestStationID(self, currentLatitude, currentLongitude):
 
@@ -31,15 +31,15 @@ class EismoinfoLTWeather(RMParser):
 
         # now get info about every place and measure the distance to it
         minimalDistance = 0
-        nearestStationID = None
+        nearestStationID = ""
         for station in jsonStations:
-            #log.debug(station)
+            # log.debug(station)
 
             # check that station should have rain sensor
             if station["krituliu_kiekis"] is None:
                 continue
 
-            stationID = int(station["id"])
+            stationID = station["id"]
 
             # get info about place coordinate
             stationLatitude = float(station["lat"])
@@ -48,36 +48,36 @@ class EismoinfoLTWeather(RMParser):
                                                                 stationLatitude, stationLongitude)
             # log.debug("StationID: %d, distance: %f", stationID, distance)
 
-            if nearestStationID is None or distance < minimalDistance:
+            if nearestStationID == "" or distance < minimalDistance:
                 # ok this place is better, save it
                 nearestStationID = stationID
                 minimalDistance = distance
-                log.debug("Updating nearest station ID to %d with distance to it %f km", nearestStationID,
+                log.debug("Updating nearest station ID to %s with distance to it %f km", nearestStationID,
                           minimalDistance)
 
         if minimalDistance > 20:
             log.error(
                 "Nearest eismoinfo.lt station is too far, please check your coordinates, they must be within Lithuania, Europe")
-            return None
+            return ""
         else:
-            log.info("Found nearest station ID %d with distance to it %f km", nearestStationID, minimalDistance)
+            log.info("Found nearest station ID %s with distance to it %f km", nearestStationID, minimalDistance)
             return nearestStationID
 
     def perform(self):  # The function that will be executed must have this name
 
         # check do we already know nearest place code
-        if self.nearestStationID is None:
+        if self.params["nearestStationID"] == "":
             log.info("eismoinfo.lt nearest place is not set yet, trying to find one...")
-            self.nearestStationID = self.findNearestStationID(self.settings.location.latitude,
-                                                              self.settings.location.longitude)
+            self.params["nearestStationID"] = self.findNearestStationID(self.settings.location.latitude,
+                                                                        self.settings.location.longitude)
 
-            if self.nearestStationID is None:
+            if self.params["nearestStationID"] == "":
                 log.error("Failed to find nearest station, please recheck your current coordinates")
                 return
 
         # downloading data from a URL convenience function since other python libraries can be used
         rawData = self.openURL(
-            "http://eismoinfo.lt/weather-conditions-retrospective?id=" + str(self.nearestStationID)).read()
+            "http://eismoinfo.lt/weather-conditions-retrospective?id=" + self.params["nearestStationID"]).read()
         if rawData is None:
             log.error("Failed to get eismoinfo.lt contents")
             return
