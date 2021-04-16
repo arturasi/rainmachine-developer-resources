@@ -14,8 +14,8 @@ class MeteoLTWeather(RMParser):
     parserInterval = 2 * 3600  # Your parser running interval in seconds, data will only be mixed in hourly intervals
     parserDebug = False
 
-    nearestPlaceCode = ""  # we will find nearest station automatically on first run
-    defaultParams = {}  # set empty defaults params to clear info from previous versions
+    params = {"nearestPlaceCode": ""}  # we will find nearest station automatically if it is not set
+    defaultParams = {"nearestPlaceCode": ""}
 
     def findNearestPlaceCode(self, currentLatitude, currentLongitude):
 
@@ -69,22 +69,29 @@ class MeteoLTWeather(RMParser):
 
     def perform(self):  # The function that will be executed must have this name
 
-        # check do we already know nearest place code
-        if self.nearestPlaceCode == "":
-            log.info("meteo.lt nearest place is not set yet, trying to find one...")
-            self.nearestPlaceCode = self.findNearestPlaceCode(self.settings.location.latitude,
-                                                         self.settings.location.longitude)
+        # get nearest place code
+        if self.params["nearestPlaceCode"] == "":
+            # find it
+            log.info("Nearest place is not set yet, trying to find one...")
+            self.params["nearestPlaceCode"] = self.findNearestPlaceCode(self.settings.location.latitude,
+                                                                        self.settings.location.longitude)
+
+        # if nearest place is still unknown this means we failed to find it; exit
+        if self.params["nearestPlaceCode"] == "":
+            log.error(
+                "Failed to get nearest place. Please make sure that your coordinates are within Lithuania, Europe.")
+            return
 
         # downloading data from a URL convenience function since other python libraries can be used
         rawData = self.openURL(
-            "https://api.meteo.lt/v1/places/" + self.nearestPlaceCode + "/forecasts/long-term").read()
+            "https://api.meteo.lt/v1/places/" + self.params["nearestPlaceCode"] + "/forecasts/long-term").read()
         if rawData is None:
-            log.error("Failed to get meteo.lt contents")
+            log.error("Failed to get meteo.lt forecast data")
             return
 
         jsonData = json.loads(rawData)
         if jsonData is None:
-            log.error("Failed to get meteo.lt JSON contents")
+            log.error("Failed to get meteo.lt forecast JSON contents")
             return
 
         conditionAdapter = {
@@ -104,7 +111,7 @@ class MeteoLTWeather(RMParser):
         }
 
         for forecast in jsonData["forecastTimestamps"]:
-            log.debug(forecast)
+            # log.debug(forecast)
             timestamp = rmTimestampFromDateAsString(forecast["forecastTimeUtc"], "%Y-%m-%d %H:%M:%S")
             self.addValue(RMParser.dataType.TEMPERATURE, timestamp, forecast["airTemperature"])
             self.addValue(RMParser.dataType.WIND, timestamp, forecast["windSpeed"])
