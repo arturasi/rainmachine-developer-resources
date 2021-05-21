@@ -13,8 +13,11 @@ class EismoinfoLTWeather(RMParser):
     parserInterval = 1 * 3600  # Your parser running interval in seconds, data will only be mixed in hourly intervals
     parserDebug = False
 
-    params = {"nearestStationID": ""}  # we will find nearest station automatically if it is not set
-    defaultParams = {"nearestStationID": ""}
+    params = {
+        "nearestStationID": "",  # we will find nearest station automatically if it is not set
+        "SkipStationIDs": "1164"    # list of stations ID to skip (comma separated); some stations provide wrong rain values
+        }
+    defaultParams = {"nearestStationID": "", "SkipStationIDs": "1164"}
 
     def findNearestStationID(self, currentLatitude, currentLongitude):
 
@@ -23,6 +26,8 @@ class EismoinfoLTWeather(RMParser):
         if rawStations is None:
             log.error("Failed to get eismoinfo.lt stations")
             return
+
+        stationIDsToSkip=self.params["SkipStationIDs"].split(",")
 
         jsonStations = json.loads(rawStations)
         if jsonStations is None:
@@ -40,13 +45,16 @@ class EismoinfoLTWeather(RMParser):
                 continue
 
             stationID = station["id"]
+            if stationID in stationIDsToSkip:
+                log.debug("Skipping stationID %s", stationID)
+                continue
 
             # get info about place coordinate
             stationLatitude = float(station["lat"])
             stationLongitude = float(station["lng"])
             distance = distanceBetweenGeographicCoordinatesAsKm(currentLatitude, currentLongitude,
                                                                 stationLatitude, stationLongitude)
-            # log.debug("StationID: %d, distance: %f", stationID, distance)
+            # log.debug("StationID: %s, distance: %f", stationID, distance)
 
             if nearestStationID == "" or distance < minimalDistance:
                 # ok this place is better, save it
@@ -68,6 +76,7 @@ class EismoinfoLTWeather(RMParser):
         # check do we already know nearest place code
         if self.params["nearestStationID"] == "":
             log.info("eismoinfo.lt nearest place is not set yet, trying to find one...")
+            # self.params["nearestStationID"] = self.findNearestStationID(54.64727905936214,25.109561061574105)
             self.params["nearestStationID"] = self.findNearestStationID(self.settings.location.latitude,
                                                                         self.settings.location.longitude)
 
@@ -77,7 +86,8 @@ class EismoinfoLTWeather(RMParser):
 
         # downloading data from a URL convenience function since other python libraries can be used
         rawData = self.openURL(
-            "http://eismoinfo.lt/weather-conditions-retrospective?id=" + self.params["nearestStationID"]).read()
+            "http://eismoinfo.lt/weather-conditions-retrospective?id=" + self.params["nearestStationID"]).read() + \
+            "&number=500"
         if rawData is None:
             log.error("Failed to get eismoinfo.lt contents")
             return
