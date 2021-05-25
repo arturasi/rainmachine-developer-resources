@@ -15,8 +15,9 @@ class EismoinfoLTWeather(RMParser):
 
     params = {
         "nearestStationID": "",  # we will find nearest station automatically if it is not set
-        "SkipStationIDs": "1164"    # list of stations ID to skip (comma separated); some stations provide wrong rain values
-        }
+        "SkipStationIDs": "1164"
+        # list of stations ID to skip (comma separated); some stations provide wrong rain values
+    }
     defaultParams = {"nearestStationID": "", "SkipStationIDs": "1164"}
 
     def findNearestStationID(self, currentLatitude, currentLongitude):
@@ -27,7 +28,7 @@ class EismoinfoLTWeather(RMParser):
             log.error("Failed to get eismoinfo.lt stations")
             return
 
-        stationIDsToSkip=self.params["SkipStationIDs"].split(",")
+        stationIDsToSkip = self.params["SkipStationIDs"].split(",")
 
         jsonStations = json.loads(rawStations)
         if jsonStations is None:
@@ -86,8 +87,8 @@ class EismoinfoLTWeather(RMParser):
 
         # downloading data from a URL convenience function since other python libraries can be used
         rawData = self.openURL(
-            "http://eismoinfo.lt/weather-conditions-retrospective?id=" + self.params["nearestStationID"]).read() + \
-            "&number=500"
+            "http://eismoinfo.lt/weather-conditions-retrospective?id=" + self.params["nearestStationID"] + \
+            "&number=500").read()
         if rawData is None:
             log.error("Failed to get eismoinfo.lt contents")
             return
