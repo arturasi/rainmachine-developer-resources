@@ -2,7 +2,8 @@ from RMParserFramework.rmParser import RMParser  # Mandatory include for parser 
 from RMUtilsFramework.rmLogging import log  # Optional include for logging
 from RMUtilsFramework.rmUtils import distanceBetweenGeographicCoordinatesAsKm
 
-import json  # Your parser needed libraries
+import json
+from datetime import datetime
 
 
 class EismoinfoLTWeather(RMParser):
@@ -77,7 +78,6 @@ class EismoinfoLTWeather(RMParser):
         # check do we already know nearest place code
         if self.params["nearestStationID"] == "":
             log.info("eismoinfo.lt nearest place is not set yet, trying to find one...")
-            # self.params["nearestStationID"] = self.findNearestStationID(54.64727905936214,25.109561061574105)
             self.params["nearestStationID"] = self.findNearestStationID(self.settings.location.latitude,
                                                                         self.settings.location.longitude)
 
@@ -87,7 +87,7 @@ class EismoinfoLTWeather(RMParser):
 
         # downloading data from a URL convenience function since other python libraries can be used
         rawData = self.openURL(
-            "http://eismoinfo.lt/weather-conditions-retrospective?id=" + self.params["nearestStationID"] + \
+            "http://eismoinfo.lt/weather-conditions-retrospective?id=" + self.params["nearestStationID"] +
             "&number=500").read()
         if rawData is None:
             log.error("Failed to get eismoinfo.lt contents")
@@ -98,12 +98,45 @@ class EismoinfoLTWeather(RMParser):
             log.error("Failed to get eismoinfo.lt JSON contents")
             return
 
-        for history in jsonData:
-            log.debug(history)
+        PreviousDate = None
+        RainSinceDayStart = None
+        for history in reversed(jsonData):  # we should go from older data to present
+            # log.debug(history)
             timestamp = int(history["surinkimo_data_unix"])
-            self.addValue(RMParser.dataType.TEMPERATURE, timestamp, float(history["oro_temperatura"]))
-            self.addValue(RMParser.dataType.WIND, timestamp, float(history["vejo_greitis_vidut"]))
-            self.addValue(RMParser.dataType.RAIN, timestamp, float(history["krituliu_kiekis"]))
+
+            RainSinceLastRecord = float(history["krituliu_kiekis"])
+
+            # wait for new day beginning
+            # we use local time, not UTC
+            CurrentDate = datetime.strptime(history["surinkimo_data"], "%Y-%m-%d %H:%M")
+            if PreviousDate is not None:
+
+                TimeInHoursFromLastRecord = (CurrentDate-PreviousDate).total_seconds() / 3600.0
+
+                # wait for new day beginning
+                if CurrentDate.date() != PreviousDate.date():
+                    # ok we got the new day
+                    # reset accumulated rain amount
+                    # log.debug("new day was started")
+                    RainSinceDayStart = RainSinceLastRecord*TimeInHoursFromLastRecord
+                else:
+                    # day is the same
+                    # accumulate rain amount
+                    if RainSinceDayStart is not None:
+                        RainSinceDayStart += RainSinceLastRecord*TimeInHoursFromLastRecord
+
+            # save for next
+            PreviousDate = CurrentDate
+
+            # add to DB
+            if RainSinceDayStart is not None:
+                # log.debug("rain %f, accumulated rain %f" % (RainSinceLastRecord, RainSinceDayStart))
+                self.addValue(RMParser.dataType.TEMPERATURE, timestamp, float(history["oro_temperatura"]))
+                self.addValue(RMParser.dataType.WIND, timestamp, float(history["vejo_greitis_vidut"]))
+                self.addValue(RMParser.dataType.RAIN, timestamp, RainSinceDayStart)
+            else:
+                # log.debug("data skipped")
+                pass
 
 
 if __name__ == "__main__":
