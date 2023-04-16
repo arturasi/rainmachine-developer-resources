@@ -4,7 +4,7 @@ from RMUtilsFramework.rmTimeUtils import rmTimestampFromDateAsString
 from RMUtilsFramework.rmUtils import distanceBetweenGeographicCoordinatesAsKm
 
 import json  # Your parser needed libraries
-
+import time
 
 class MeteoLTWeather(RMParser):
     parserName = "meteo.lt weather parser"  # Your parser name
@@ -17,15 +17,35 @@ class MeteoLTWeather(RMParser):
     params = {"nearestPlaceCode": ""}  # we will find nearest station automatically if it is not set
     defaultParams = {"nearestPlaceCode": ""}
 
+    def loadJSONFromURLWithRetries(self, url):
+
+        raw_data = None
+        for tryCnt in range(3):  # to avoid infinite loop retry max 3 times
+            time.sleep(0.3)  # delay to avoid IP ban for too frequent requests to API; 0.2 is not enough
+            url_opened = self.openURL(url)
+            if url_opened is not None:
+                raw_data = url_opened.read()
+                break  # stop retrying
+            else:
+                delay_value = 30*(tryCnt+1)      # increase delay 30s every retry
+                log.info("Delay " + str(delay_value) + "s to resume after too frequent API requests")
+                time.sleep(delay_value)  # delay to resume after too frequent API requests
+
+        if raw_data is None:
+            log.error("Failed to open \"" + url + "\"")
+            return None
+
+        json_data = json.loads(raw_data)
+        if json_data is None:
+            log.error("Failed to parse \"" + url + "\"")
+            return None
+
+        return json_data
+
     def findNearestPlaceCode(self, currentLatitude, currentLongitude):
 
         # get list of places
-        rawPlaces = self.openURL("https://api.meteo.lt/v1/places").read()
-        if rawPlaces is None:
-            log.error("Failed to get meteo.lt places")
-            return
-
-        jsonPlaces = json.loads(rawPlaces)
+        jsonPlaces = self.loadJSONFromURLWithRetries("https://api.meteo.lt/v1/places")
         if jsonPlaces is None:
             log.error("Failed to parse meteo.lt places")
             return
@@ -37,12 +57,7 @@ class MeteoLTWeather(RMParser):
             placeCode = place["code"]
 
             # get info about place coordinate
-            rawPlace = self.openURL("https://api.meteo.lt/v1/places/" + placeCode).read()
-            if rawPlace is None:
-                log.error("Failed to get meteo.lt place \"" + placeCode + "\"")
-                continue
-
-            jsonPlace = json.loads(rawPlace)
+            jsonPlace = self.loadJSONFromURLWithRetries("https://api.meteo.lt/v1/places/" + placeCode)
             if jsonPlace is None:
                 log.error("Failed to parse meteo.lt place \"" + placeCode + "\"")
                 continue
@@ -83,31 +98,32 @@ class MeteoLTWeather(RMParser):
             return
 
         # downloading data from a URL convenience function since other python libraries can be used
-        rawData = self.openURL(
-            "https://api.meteo.lt/v1/places/" + self.params["nearestPlaceCode"] + "/forecasts/long-term").read()
-        if rawData is None:
-            log.error("Failed to get meteo.lt forecast data")
-            return
-
-        jsonData = json.loads(rawData)
+        jsonData =  self.loadJSONFromURLWithRetries("https://api.meteo.lt/v1/places/" + self.params["nearestPlaceCode"] + "/forecasts/long-term")
         if jsonData is None:
             log.error("Failed to get meteo.lt forecast JSON contents")
             return
 
         conditionAdapter = {
             "clear": RMParser.conditionType.Fair,
-            "isolated-clouds": RMParser.conditionType.FewClouds,
-            "scattered-clouds": RMParser.conditionType.PartlyCloudy,
-            "overcast": RMParser.conditionType.Overcast,
+            "partly-cloudy": RMParser.conditionType.PartlyCloudy,
+            "cloudy-with-sunny-intervals": RMParser.conditionType.FewClouds,
+            "cloudy": RMParser.conditionType.Overcast,
+            "thunder": RMParser.conditionType.ThunderstormInVicinity,
+            "isolated-thunderstorms": RMParser.conditionType.ThunderstormInVicinity,
+            "thunderstorms": RMParser.conditionType.Thunderstorm,
+            "heavy-rain-with-thunderstorms": RMParser.conditionType.Thunderstorm,
             "light-rain": RMParser.conditionType.LightRain,
-            "moderate-rain": RMParser.conditionType.RainShowers,
+            "rain": RMParser.conditionType.LightRain,
             "heavy-rain": RMParser.conditionType.HeavyRain,
-            "sleet": RMParser.conditionType.FreezingRain,
+            "light-sleet": RMParser.conditionType.RainShowers,
+            "sleet": RMParser.conditionType.RainSnow,
+            "freezing-rain": RMParser.conditionType.FreezingRain,
+            "hail": RMParser.conditionType.IcePellets,
             "light-snow": RMParser.conditionType.Snow,
-            "moderate-snow": RMParser.conditionType.Snow,
+            "snow": RMParser.conditionType.Snow,
             "heavy-snow": RMParser.conditionType.Snow,
             "fog": RMParser.conditionType.Fog,
-            "na": RMParser.conditionType.Unknown
+            "null": RMParser.conditionType.Unknown
         }
 
         for forecast in jsonData["forecastTimestamps"]:
